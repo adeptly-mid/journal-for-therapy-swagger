@@ -2,7 +2,10 @@ openapi: 3.0.0
 info:
   title: Journaling for Therapy API
   version: 1.0.0
-  description: This set of APIs allows clients to record emotions in a journal and share them with therapists. This also allows clients to mangage their therapy sessions.  Therapists can manage sessions, clients, and notes.
+  description: >
+    This set of APIs allows clients to record emotions in a journal and share 
+    them with therapists. This also allows clients to manage their therapy sessions. 
+    Therapists can manage sessions, clients, and notes.
 
 servers:
   - url: https://api.example.com/v1
@@ -11,16 +14,20 @@ servers:
 tags:
   - name: Auth
     description: Endpoints for authentication and user account management.
-  - name: Clients
-    description: Endpoints for client-related actions.
-  - name: Therapists
-    description: Endpoints for therapist-related actions.
-  - name: Sessions
-    description: Endpoints for creating and managing therapy sessions.
+  - name: Mapping
+    description: Endpoints for mapping/unmapping client-therapist relationships.
+  - name: Journal
+    description: Endpoints for client journaling and access control.
+  - name: Session
+    description: Endpoints for therapy sessions and appointments.
   - name: Messages
-    description: Endpoints for sending and viewing messages between clients and therapists.
+    description: Endpoints for sending/viewing messages.
   - name: Search
-    description: Endpoints for keyword search across notes, journals, and user data.
+    description: Endpoints for keyword search.
+  - name: Clients
+    description: Endpoints for retrieving or managing client details.
+  - name: Therapists
+    description: Endpoints for retrieving or managing therapist details.
 
 paths:
   /auth/client/signup:
@@ -57,7 +64,7 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Successful login (returns auth token)
+          description: Successful login
           content:
             application/json:
               schema:
@@ -99,7 +106,7 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Successful login (returns auth token)
+          description: Successful login
           content:
             application/json:
               schema:
@@ -123,10 +130,26 @@ paths:
         "404":
           description: Client not found
 
-  /clients/{clientId}/therapists:
+  /therapists/{therapistId}:
     get:
-      tags: [Clients]
-      summary: List therapists mapped to a client and who have access to the journal
+      tags: [Therapists]
+      summary: Get therapist details by ID
+      parameters:
+        - $ref: "#/components/parameters/therapistId"
+      responses:
+        "200":
+          description: Therapist details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Therapist"
+        "404":
+          description: Therapist not found
+
+  /mapping/client/{clientId}/therapist:
+    get:
+      tags: [Mapping]
+      summary: List therapists mapped to a specific client
       parameters:
         - $ref: "#/components/parameters/clientId"
       responses:
@@ -139,7 +162,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/Therapist"
     post:
-      tags: [Clients]
+      tags: [Mapping]
       summary: Map a therapist to a client account
       parameters:
         - $ref: "#/components/parameters/clientId"
@@ -159,23 +182,97 @@ paths:
         "404":
           description: Client or Therapist not found
 
-  /clients/{clientId}/therapists/{therapistId}:
+  /mapping/client/{clientId}/therapist/{therapistId}:
     delete:
-      tags: [Clients]
-      summary: Remove a therapist mapped to a client account entirely
+      tags: [Mapping]
+      summary: Remove a therapist from a client’s account
       parameters:
         - $ref: "#/components/parameters/clientId"
         - $ref: "#/components/parameters/therapistId"
       responses:
         "204":
-          description: Therapist removed from client's account
+          description: Therapist removed
         "404":
           description: Client or Therapist not found
 
-  /clients/{clientId}/therapists/{therapistId}/journal-access:
+  /mapping/therapist/{therapistId}/client:
+    get:
+      tags: [Mapping]
+      summary: List all clients associated with a given therapist
+      parameters:
+        - $ref: "#/components/parameters/therapistId"
+      responses:
+        "200":
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Client"
+
+  /mapping/therapist/{therapistId}/client/{clientId}:
+    post:
+      tags: [Mapping]
+      summary: Therapist requests mapping to a specific client
+      parameters:
+        - $ref: "#/components/parameters/therapistId"
+        - $ref: "#/components/parameters/clientId"
+      responses:
+        "201":
+          description: Request for mapping created
+        "404":
+          description: Therapist or Client not found
+
+    delete:
+      tags: [Mapping]
+      summary: Remove a client from therapist’s list
+      parameters:
+        - $ref: "#/components/parameters/therapistId"
+        - $ref: "#/components/parameters/clientId"
+      responses:
+        "204":
+          description: Client removed
+        "404":
+          description: Therapist or Client not found
+
+  /journal/client/{clientId}:
+    get:
+      tags: [Journal]
+      summary: Get all emotion journal entries for a client
+      parameters:
+        - $ref: "#/components/parameters/clientId"
+      responses:
+        "200":
+          description: List of journal entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JournalEntry"
+
+    post:
+      tags: [Journal]
+      summary: Add a record of an emotion felt by a client
+      parameters:
+        - $ref: "#/components/parameters/clientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJournalEntry"
+      responses:
+        "201":
+          description: Journal entry created
+        "404":
+          description: Client not found
+
+  /journal/client/{clientId}/therapist/{therapistId}/access:
     patch:
-      tags: [Clients]
-      summary: Enable or disable a therapist's access to the client's journal
+      tags: [Journal]
+      summary: Enable or disable a therapist’s access to the client’s journal
       parameters:
         - $ref: "#/components/parameters/clientId"
         - $ref: "#/components/parameters/therapistId"
@@ -193,10 +290,10 @@ paths:
         "404":
           description: Client or Therapist not found
 
-  /clients/{clientId}/therapists/{therapistId}/journal-access/requests:
+  /journal/client/{clientId}/therapist/{therapistId}/access/request:
     post:
-      tags: [Clients]
-      summary: Approve or reject a therapist's request for access to client journal
+      tags: [Journal]
+      summary: Approve or reject a therapist’s request for client journal access
       parameters:
         - $ref: "#/components/parameters/clientId"
         - $ref: "#/components/parameters/therapistId"
@@ -214,87 +311,10 @@ paths:
         "404":
           description: Client or Therapist not found
 
-  /clients/{clientId}/journal:
-    get:
-      tags: [Clients]
-      summary: Get all emotion journal entries for a client
-      parameters:
-        - $ref: "#/components/parameters/clientId"
-      responses:
-        "200":
-          description: List of journal entries
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/JournalEntry"
+  /journal/therapist/{therapistId}/client/{clientId}/request-access:
     post:
-      tags: [Clients]
-      summary: Add a record of an emotion felt
-      parameters:
-        - $ref: "#/components/parameters/clientId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateJournalEntry"
-      responses:
-        "201":
-          description: Journal entry created
-        "404":
-          description: Client not found
-
-  /therapists/{therapistId}:
-    get:
-      tags: [Therapists]
-      summary: Get therapist details by ID
-      parameters:
-        - $ref: "#/components/parameters/therapistId"
-      responses:
-        "200":
-          description: Therapist details
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Therapist"
-        "404":
-          description: Therapist not found
-
-  /therapists/{therapistId}/clients:
-    get:
-      tags: [Therapists]
-      summary: View list of clients that the therapist has
-      parameters:
-        - $ref: "#/components/parameters/therapistId"
-      responses:
-        "200":
-          description: List of clients
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Client"
-
-  /therapists/{therapistId}/clients/{clientId}/request-map:
-    post:
-      tags: [Therapists]
-      summary: Request a new client to be mapped for therapy
-      parameters:
-        - $ref: "#/components/parameters/therapistId"
-        - $ref: "#/components/parameters/clientId"
-      responses:
-        "201":
-          description: Request for mapping client to therapist created
-        "404":
-          description: Therapist or Client not found
-
-  /therapists/{therapistId}/clients/{clientId}/request-journal-access:
-    post:
-      tags: [Therapists]
-      summary: Request a client's journal access
+      tags: [Journal]
+      summary: Therapist requests a client’s journal access
       parameters:
         - $ref: "#/components/parameters/therapistId"
         - $ref: "#/components/parameters/clientId"
@@ -304,23 +324,10 @@ paths:
         "404":
           description: Therapist or Client not found
 
-  /therapists/{therapistId}/clients/{clientId}:
-    delete:
-      tags: [Therapists]
-      summary: Remove a client from therapist's list
-      parameters:
-        - $ref: "#/components/parameters/therapistId"
-        - $ref: "#/components/parameters/clientId"
-      responses:
-        "204":
-          description: Client removed from therapist
-        "404":
-          description: Therapist or Client not found
-
-  /therapists/{therapistId}/clients/{clientId}/journal:
+  /journal/therapist/{therapistId}/client/{clientId}:
     get:
-      tags: [Therapists]
-      summary: View client journal
+      tags: [Journal]
+      summary: Therapist views a client’s journal (if they have access)
       parameters:
         - $ref: "#/components/parameters/therapistId"
         - $ref: "#/components/parameters/clientId"
@@ -338,26 +345,10 @@ paths:
         "404":
           description: Therapist or Client not found
 
-  /therapists/{therapistId}/sessions:
-    get:
-      tags: [Sessions]
-      summary: List all sessions created by this therapist
-      parameters:
-        - $ref: "#/components/parameters/therapistId"
-      responses:
-        "200":
-          description: List of sessions
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Session"
+  /session:
     post:
-      tags: [Sessions]
+      tags: [Session]
       summary: Create a new session
-      parameters:
-        - $ref: "#/components/parameters/therapistId"
       requestBody:
         required: true
         content:
@@ -370,10 +361,114 @@ paths:
         "404":
           description: Therapist not found
 
+    get:
+      tags: [Session]
+      summary: If you want to list all sessions in the system
+      responses:
+        "200":
+          description: List of all sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+
+  /session/{sessionId}:
+    get:
+      tags: [Session]
+      summary: Get details of a specific session
+      parameters:
+        - $ref: "#/components/parameters/sessionId"
+      responses:
+        "200":
+          description: Session details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "404":
+          description: Session not found
+
+    put:
+      tags: [Session]
+      summary: Modify details of a session
+      parameters:
+        - $ref: "#/components/parameters/sessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSessionRequest"
+      responses:
+        "200":
+          description: Session updated
+        "404":
+          description: Session not found
+
+  /session/{sessionId}/appointment:
+    post:
+      tags: [Session]
+      summary: Client requests an appointment in an available session
+      parameters:
+        - $ref: "#/components/parameters/sessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                clientId:
+                  type: string
+                status:
+                  type: string
+                  enum: [pending, approved, rejected]
+                  default: pending
+                  description: Status of the appointment request
+      responses:
+        "201":
+          description: Appointment request created
+        "404":
+          description: Session or Client not found
+
+  /therapists/{therapistId}/sessions:
+    post:
+      tags: [Session]
+      summary: Create a new session for a specific therapist
+      parameters:
+        - $ref: "#/components/parameters/therapistId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Session created (status can be set or default to pending)
+        "404":
+          description: Therapist not found
+
+    get:
+      tags: [Session]
+      summary: List all sessions belonging to a specific therapist
+      parameters:
+        - $ref: "#/components/parameters/therapistId"
+      responses:
+        "200":
+          description: List of sessions for the therapist
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+
   /therapists/{therapistId}/sessions/{sessionId}:
     get:
-      tags: [Sessions]
-      summary: Get session details
+      tags: [Session]
+      summary: Get details of a specific session belonging to a therapist
       parameters:
         - $ref: "#/components/parameters/therapistId"
         - $ref: "#/components/parameters/sessionId"
@@ -386,9 +481,10 @@ paths:
                 $ref: "#/components/schemas/Session"
         "404":
           description: Session or Therapist not found
+
     put:
-      tags: [Sessions]
-      summary: Modify details of a session
+      tags: [Session]
+      summary: Modify details/status of a specific session
       parameters:
         - $ref: "#/components/parameters/therapistId"
         - $ref: "#/components/parameters/sessionId"
@@ -400,29 +496,9 @@ paths:
               $ref: "#/components/schemas/UpdateSessionRequest"
       responses:
         "200":
-          description: Session updated
+          description: Session updated (e.g., status from pending to approved)
         "404":
           description: Session or Therapist not found
-
-  /sessions/{sessionId}/appointment:
-    post:
-      tags: [Sessions]
-      summary: Client requests an appointment in an available session
-      parameters:
-        - $ref: "#/components/parameters/sessionId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              properties:
-                clientId:
-                  type: string
-      responses:
-        "201":
-          description: Appointment request created
-        "404":
-          description: Session or Client not found
 
   /messages/client/{clientId}/therapist/{therapistId}:
     get:
@@ -458,7 +534,6 @@ paths:
                 sender:
                   type: string
                   enum: [client, therapist]
-                  description: "Specify 'client' or 'therapist'"
                 content:
                   type: string
       responses:
@@ -470,12 +545,11 @@ paths:
   /search/clients/{clientId}:
     get:
       tags: [Search]
-      summary: Run keyword search across therapist notes and the client's own emotions journal
+      summary: Run keyword search across therapist notes and client’s own journal
       parameters:
         - $ref: "#/components/parameters/clientId"
         - name: q
           in: query
-          description: The search keyword
           required: true
           schema:
             type: string
@@ -490,12 +564,11 @@ paths:
   /search/therapists/{therapistId}:
     get:
       tags: [Search]
-      summary: Run keyword search across clients, notes, and emotion journals (accessible to therapist)
+      summary: Run keyword search across clients, notes, and journals accessible to a therapist
       parameters:
         - $ref: "#/components/parameters/therapistId"
         - name: q
           in: query
-          description: The search keyword
           required: true
           schema:
             type: string
@@ -543,26 +616,33 @@ components:
       required:
         - email
         - password
+        - name
       properties:
         email:
           type: string
           format: email
         password:
           type: string
+        name:
+          type: string
+
     CreateTherapistRequest:
       type: object
       required:
         - email
         - password
+        - name
       properties:
         email:
           type: string
           format: email
         password:
           type: string
+        name:
+          type: string
         specialization:
           type: string
-          description: E.g., "Clinical Psychologist", "Counselor", etc.
+
     LoginRequest:
       type: object
       required:
@@ -574,17 +654,17 @@ components:
           format: email
         password:
           type: string
+
     AuthToken:
       type: object
       properties:
         token:
           type: string
-          description: JWT or any other token
 
     Client:
       type: object
       properties:
-        id:
+        clientId:
           type: string
         email:
           type: string
@@ -592,7 +672,7 @@ components:
     Therapist:
       type: object
       properties:
-        id:
+        therapistId:
           type: string
         email:
           type: string
@@ -604,22 +684,21 @@ components:
       required:
         - feeling
         - intensity
+        - timeOfEmotion
       properties:
         timeOfEmotion:
           type: string
           format: date-time
-          description: When the emotion was felt
         feeling:
           type: string
-          description: E.g., "anxious", "joyful", "frustrated"
         intensity:
           type: integer
           format: int32
-          description: A numeric scale for intensity (e.g., 1-10)
+
     JournalEntry:
       type: object
       properties:
-        id:
+        journalEntryId:
           type: string
         clientId:
           type: string
@@ -638,19 +717,28 @@ components:
       type: object
       required:
         - title
+        - therapistId
       properties:
+        therapistId:
+          type: string
         title:
           type: string
         privateNotes:
           type: string
-          description: Notes private to the therapist
         sharedNotes:
           type: string
-          description: Assignments or notes visible to both
+        status:
+          type: string
+          enum: [pending, approved, rejected, open, closed]
+          description: >
+            Status of the session. Typically, when a client requests, 
+            it starts as pending, and the therapist can update it.
+          default: pending
+
     Session:
       type: object
       properties:
-        id:
+        sessionId:
           type: string
         therapistId:
           type: string
@@ -660,9 +748,14 @@ components:
           type: string
         sharedNotes:
           type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected, open, closed]
+          description: Overall status of the session or appointment
         createdAt:
           type: string
           format: date-time
+
     UpdateSessionRequest:
       type: object
       properties:
@@ -672,11 +765,14 @@ components:
           type: string
         sharedNotes:
           type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected, open, closed]
 
     Message:
       type: object
       properties:
-        id:
+        messageId:
           type: string
         sender:
           type: string
@@ -702,9 +798,8 @@ components:
             properties:
               type:
                 type: string
-                description: "session | note | journalEntry | client | therapist"
               match:
                 type: string
-                description: "Snippet or matched text"
+
 security:
   - BearerAuth: []
