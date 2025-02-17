@@ -1,16 +1,6 @@
 # DynamoDB Schema Design
 
-## This document outlines a DynamoDB schema design for an application that manages clients, therapists, their mappings, journal entries, sessions, and messages.
-
-## Table of Contents
-
-1. [Clients Table](#1-clients-table)
-2. [Therapists Table](#2-therapists-table)
-3. [ClientTherapistMapping Table](#3-clienttherapistmapping-table)
-4. [Journal Table](#4-journal-table)
-5. [Session Table](#5-session-table)
-6. [Messages Table](#6-messages-table)
-7. [API Usage](#7-api-usage)
+This document outlines the updated DynamoDB schema design for an application that manages clients, therapists, their mappings, journal entries, sessions, messages, and logs journal-access requests.
 
 ---
 
@@ -53,16 +43,14 @@
 - `specialization` (String)
 - `passwordHash` (String)
 
-### Global Secondary Indexes
+**Global Secondary Indexes**
 
-1. **By Email**
+1. **GSI_Therapists_ByEmail**
 
-   - **Name:** `GSI_Therapists_ByEmail`
    - **Partition Key:** `email` (String)
    - **Purpose:** Lookup by email for authentication
 
-2. **By Specialization**
-   - **Name:** `GSI_Therapists_BySpecialization`
+2. **GSI_Therapists_BySpecialization**
    - **Partition Key:** `specialization` (String)
    - **Purpose:** Query therapists by specialization
 
@@ -79,7 +67,7 @@
 
 **Attributes**
 
-- `status` (String) – e.g., active, pending, blocked
+- `status` (String)
 
 **Global Secondary Index**
 
@@ -105,22 +93,20 @@
 - `feeling` (String)
 - `intensity` (Number)
 
-### Local Secondary Index
+**Local Secondary Indexes**
 
-#### LSI: Journal Time
+1. **LSI_Journal_Time**
 
-- **Name:** `LSI_Journal_Time`
-- **Partition Key:** `clientId`
-- **Sort Key:** `timeOfEmotion`
-- **Purpose:** Enables chronological queries (e.g., “All entries for this client in time order”).
+   - **Partition Key:** `clientId`
+   - **Sort Key:** `timeOfEmotion`
+   - **Purpose:** Enables chronological queries (e.g., “All entries for this client in time order”)
 
-#### LSI: Emotion
+2. **LSI_Journal_ByFeeling**
+   - **Partition Key:** `clientId`
+   - **Sort Key:** `feeling`
+   - **Purpose:** Allows filtering journal entries per client by `feeling`
 
-- **Name:** `LSI_Journal_ByFeeling`
-- **Partition Key:** `clientId` (same as the table)
-- **Sort Key:** `feeling` (String)
-- **Purpose:** Allows filtering journal entries **per client** by `feeling`. For example:  
-   “Show me all entries for a specific `clientId` where `feeling` = 'happy'.”
+---
 
 ## 5. Session Table
 
@@ -132,18 +118,28 @@
 
 **Attributes**
 
+- `sessionId` (String)
 - `therapistId` (String)
+- `clientId` (String)
 - `title` (String)
 - `privateNotes` (String)
 - `sharedNotes` (String)
-- `status` (String) – e.g., pending, approved, rejected, open, closed
+- `status` (String)
+- `startTime` (String) – ISO-8601 date/time
+- `endTime` (String) – ISO-8601 date/time
 
-**Global Secondary Index**
+**Global Secondary Indexes**
 
-- **Name:** `GSI_Session_ByTherapist`
-- **Partition Key:** `therapistId`
-- **Sort Key:** `sessionId` (or another attribute)
-- **Purpose:** Lists all sessions for a given therapist
+1. **GSI_Session_ByTherapist**
+
+   - **Partition Key:** `therapistId`
+   - **Sort Key:** `sessionId`
+   - **Purpose:** Lists all sessions for a given therapist
+
+2. **GSI_Session_ByClient**
+   - **Partition Key:** `clientId`
+   - **Sort Key:** `startTime`
+   - **Purpose:** Enables a client to list their sessions with options to filter by therapist and session timings
 
 ---
 
@@ -153,28 +149,61 @@
 
 **Primary Key**
 
-- **Partition Key:** `"CLIENT#<clientId>#THERAPIST#<therapistId>"` (String)
+- **Partition Key:** `conversationId` (String)
 - **Sort Key:** `createdAt` (String, ISO-8601 date/time)
 
 **Attributes**
 
-- `content` (String)
-- `sender` (String) – "client" or "therapist"
-- `receiver` (String)
 - `messageId` (String)
+- `content` (String)
+- `sender` (String)
+- `receiver` (String)
+- `clientId` (String)
+- `therapistId` (String)
 
-All messages between one client and therapist are stored in the same partition, sorted by creation time.
+**Global Secondary Indexes**
+
+1. **GSI_Messages_ByClient**
+
+   - **Partition Key:** `clientId`
+   - **Sort Key:** `createdAt`
+   - **Purpose:** Allows a client to list all conversation messages across multiple therapists
+
+2. **GSI_Messages_ByTherapist**
+   - **Partition Key:** `therapistId`
+   - **Sort Key:** `createdAt`
+   - **Purpose:** Allows a therapist to list all conversation messages across multiple clients
 
 ---
 
-## 7. API Usage
+## 7. JournalAccessLogs Table
+
+**Table Name:** `JournalAccessLogs`
+
+**Primary Key**
+
+- **Partition Key:** `clientId` (String)
+- **Sort Key:** `accessTimestamp` (String, ISO-8601 date/time)
+
+**Attributes**
+
+- `logId` (String)
+- `clientId` (String)
+- `userId` (String)
+- `accessType` (String)
+- `journalEntryId` (String)
+- `details` (Map)
+
+---
+
+## 8. API Usage
 
 ### Clients
 
 - **Sign Up**
   - `PutItem` in `Clients`
 - **Login**
-  - `Query` `GSI_Clients_ByEmail`
+  - `Query` using `GSI_Clients_ByEmail`
 - **Get Client**
   - `GetItem` by `clientId`
 
@@ -183,49 +212,61 @@ All messages between one client and therapist are stored in the same partition, 
 - **Sign Up**
   - `PutItem` in `Therapists`
 - **Login**
-  - `Query` `GSI_Therapists_ByEmail`
+  - `Query` using `GSI_Therapists_ByEmail`
 - **Get Therapist**
   - `GetItem` by `therapistId`
 - **Search by Specialization**
-  - `Query` `GSI_Therapists_BySpecialization`
+  - `Query` using `GSI_Therapists_BySpecialization`
 
 ### Client-Therapist Mapping
 
 - **List Therapists for a Client**
-  - `Query` `ClientTherapistMapping` by `clientId`
+  - `Query` by `clientId`
 - **List Clients for a Therapist**
-  - `Query` `GSI_Mapping_TherapistId` by `therapistId`
+  - `Query` using `GSI_Mapping_TherapistId` by `therapistId`
 - **Map / Unmap**
   - `PutItem` or `DeleteItem` in `ClientTherapistMapping`
 
 ### Journal
 
 - **List Journal Entries**
-  - `Query` `Journal` by `clientId`
+  - `Query` the `Journal` table by `clientId`
 - **Add Journal Entry**
-  - `PutItem` with `PK=clientId`, `SK=journalEntryId`
-- **Optional**: Query by Time or Feeling
-  - **LSI_Journal_Time** (`timeOfEmotion`)
-  - **GSI_Journal_ByFeeling** (`feeling`)
+  - `PutItem` with `clientId` and `journalEntryId`
+- **Query by Time**
+  - Use `LSI_Journal_Time`
+- **Query by Feeling**
+  - Use `LSI_Journal_ByFeeling`
 
 ### Session
 
 - **Create Session**
-  - `PutItem` in `Session`
+  - `PutItem` in `Session` (include `clientId`, `therapistId`, `startTime`, and `endTime`)
 - **List All Sessions**
-  - `Scan` or a specific index
+  - `Scan` or use a specific index as needed
 - **Get Session**
   - `GetItem` by `sessionId`
 - **Update Session**
   - `UpdateItem` by `sessionId`
 - **List Sessions by Therapist**
-  - `Query` `GSI_Session_ByTherapist`
+  - `Query` using `GSI_Session_ByTherapist`
+- **List Sessions by Client with Filters**
+  - `Query` using `GSI_Session_ByClient` and apply filter expressions for `therapistId` and session timings
 
 ### Messages
 
-- **List Messages**
-  - `Query` `Messages` by the composite partition key `"CLIENT#<clientId>#THERAPIST#<therapistId>"`
+- **List Messages in a Conversation**
+  - `Query` by `conversationId`
 - **Send Message**
-  - `PutItem` with that same partition key and a new timestamp as the sort key
+  - `PutItem` with the appropriate `conversationId` and `createdAt` timestamp
+- **List All Conversations for a Client**
+  - `Query` using `GSI_Messages_ByClient`
+- **List All Conversations for a Therapist**
+  - `Query` using `GSI_Messages_ByTherapist`
 
----
+### JournalAccessLogs
+
+- **Log a Journal Access Request**
+  - `PutItem` in `JournalAccessLogs`
+- **List Journal Access Logs for a Client**
+  - `Query` by `clientId`
